@@ -18,7 +18,7 @@ const ConveyorBelt: React.FC<ConveyorBeltProps> = ({
   isPlaying
 }) => {
   return (
-    <div className="w-full h-full bg-gradient-to-r from-gray-600 to-gray-700 border-t-4 border-yellow-400 relative">
+    <div className="w-full h-full bg-gradient-to-r from-gray-300 to-gray-400 border-t-4 border-yellow-400 relative">
       {/* Left Wall - Physical barrier for bottles - Mobile optimized */}
       <div className="absolute left-0 top-0 w-6 h-full bg-gradient-to-r from-red-600 to-red-700 border-r-3 border-red-800 shadow-xl z-10">
         {/* Wall texture */}

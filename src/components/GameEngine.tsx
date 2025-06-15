@@ -7,7 +7,18 @@ import { Bottle, GameState } from '../types/game';
 import { generateBottle } from '../utils/bottleGenerator';
 import { soundEffects } from '../utils/soundEffects';
 
+const imageAssets = [
+  '/images/beer-can-15c.png',
+  '/images/plastic-bottle-15c.png',
+  '/images/plastic-bottle-25c.png',
+  '/images/glass-bottle-green.png',
+  '/images/glass-bottle-brown.png',
+  '/images/glass-bottle-white.png'
+];
+
 const GameEngine: React.FC = () => {
+  const [assetsLoaded, setAssetsLoaded] = useState(false);
+  const [waitingForUserGesture, setWaitingForUserGesture] = useState(true);
   const [gameState, setGameState] = useState<GameState>({
     score: 0,
     level: 1, // Keep for internal tracking but don't display
@@ -16,15 +27,93 @@ const GameEngine: React.FC = () => {
     conveyorSpeed: 1,
     nextBottleId: 0
   });
+  // Separate pause state
+  const [isPaused, setIsPaused] = useState(false);
 
   const [draggedBottle, setDraggedBottle] = useState<Bottle | null>(null);
   const [crushingBottles, setCrushingBottles] = useState<Set<number>>(new Set());
   const [errorEffects, setErrorEffects] = useState<Array<{id: number, x: number, y: number}>>([]);
   const [speedUpCelebration, setSpeedUpCelebration] = useState<{active: boolean, newSpeed: number, milestone: number} | null>(null);
+  const [winCelebration, setWinCelebration] = useState<boolean>(false);
   const gameLoopRef = useRef<number>();
   const physicsLoopRef = useRef<number>();
   const lastBottleSpawnRef = useRef<number>(0);
   const lastSpeedTierRef = useRef<number>(0); // Track previous speed tier
+
+  // Fullscreen ref
+  const mainContainerRef = useRef<HTMLDivElement>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Play/Pause handler
+  const handleTogglePlay = () => {
+    setIsPaused((prev) => !prev);
+  };
+
+  // Fullscreen handler
+  const handleToggleFullscreen = () => {
+    if (!isFullscreen && mainContainerRef.current) {
+      if (mainContainerRef.current.requestFullscreen) {
+        mainContainerRef.current.requestFullscreen();
+      } else if ((mainContainerRef.current as any).webkitRequestFullscreen) {
+        (mainContainerRef.current as any).webkitRequestFullscreen();
+      } else if ((mainContainerRef.current as any).msRequestFullscreen) {
+        (mainContainerRef.current as any).msRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if ((document as any).webkitExitFullscreen) {
+        (document as any).webkitExitFullscreen();
+      } else if ((document as any).msExitFullscreen) {
+        (document as any).msExitFullscreen();
+      }
+    }
+  };
+
+  // Listen for fullscreen change
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('msfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('msfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+  // Preload all images and sounds before starting the game
+  // Preload images immediately, but only preload sounds after user gesture
+  useEffect(() => {
+    let isMounted = true;
+    async function preloadImages() {
+      await Promise.all(
+        imageAssets.map(
+          src =>
+            new Promise<void>((resolve, reject) => {
+              const img = new window.Image();
+              img.src = src;
+              img.onload = () => resolve();
+              img.onerror = () => resolve(); // Don't block on error
+            })
+        )
+      );
+      // Don't set assetsLoaded here; wait for user gesture for sounds
+    }
+    preloadImages();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Handler for user gesture to start the game (preload sounds)
+  const handleStartGame = async () => {
+    setWaitingForUserGesture(false);
+    await soundEffects.initOnUserGesture();
+    setAssetsLoaded(true);
+  };
 
   const spawnBottle = useCallback(() => {
     const now = Date.now();
@@ -261,7 +350,7 @@ const GameEngine: React.FC = () => {
 
   // Physics loop for smooth bottle collision animation
   useEffect(() => {
-    if (gameState.isPlaying) {
+    if (gameState.isPlaying && !isPaused) {
       physicsLoopRef.current = setInterval(updatePhysics, 50);
     } else {
       if (physicsLoopRef.current) {
@@ -274,11 +363,11 @@ const GameEngine: React.FC = () => {
         clearInterval(physicsLoopRef.current);
       }
     };
-  }, [updatePhysics, gameState.isPlaying]);
+  }, [updatePhysics, gameState.isPlaying, isPaused]);
 
   // Main game loop
   useEffect(() => {
-    if (gameState.isPlaying) {
+    if (gameState.isPlaying && !isPaused) {
       gameLoopRef.current = setInterval(gameLoop, 60);
     } else {
       if (gameLoopRef.current) {
@@ -291,7 +380,7 @@ const GameEngine: React.FC = () => {
         clearInterval(gameLoopRef.current);
       }
     };
-  }, [gameLoop, gameState.isPlaying]);
+  }, [gameLoop, gameState.isPlaying, isPaused]);
 
   const createCrushEffect = (bottle: Bottle) => {
     setCrushingBottles(prev => new Set(prev).add(bottle.id));
@@ -355,10 +444,26 @@ const GameEngine: React.FC = () => {
         
         console.log('Correct sorting! Adding €', scoreToAdd.toFixed(2));
         
+        // Check for win condition
+        const newScore = prev.score + scoreToAdd;
+        if (newScore >= 100 && !winCelebration) {
+          setWinCelebration(true);
+          // Play celebration sound
+          soundEffects.playSuccess();
+          // Vibration
+          if ('vibrate' in navigator) {
+            navigator.vibrate([300, 100, 300, 100, 500]);
+          }
+          // After celebration, reset game
+          setTimeout(() => {
+            setWinCelebration(false);
+            restartGame();
+          }, 3000);
+        }
         return {
           ...prev,
           bottles: prev.bottles.filter(b => b.id !== bottle.id),
-          score: prev.score + scoreToAdd
+          score: newScore
         };
       });
     } else {
@@ -419,58 +524,129 @@ const GameEngine: React.FC = () => {
   const speedTier = Math.floor(gameState.score / 5);
   const nextSpeedAt = (speedTier + 1) * 5;
 
+  if (waitingForUserGesture) {
+    // Show a "Start Game" button to get user gesture for AudioContext
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-b from-sky-200 to-green-100">
+        <div className="flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <div className="text-lg font-bold text-green-800 mb-4">Loading images...</div>
+          <button
+            className="px-6 py-3 bg-green-600 text-white rounded-xl text-xl font-bold shadow hover:bg-green-700 transition"
+            onClick={handleStartGame}
+          >
+            Start Game
+          </button>
+          <div className="text-xs text-gray-500 mt-2">Audio will be enabled after you click</div>
+        </div>
+      </div>
+    );
+  }
+  if (!assetsLoaded) {
+    // Should not happen, but fallback spinner
+    return (
+      <div className="w-full h-screen flex items-center justify-center bg-gradient-to-b from-sky-200 to-green-100">
+        <div className="flex flex-col items-center">
+          <div className="w-12 h-12 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mb-4"></div>
+          <div className="text-lg font-bold text-green-800">Loading assets...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="w-full h-screen bg-gradient-to-b from-sky-200 to-green-100 overflow-hidden relative flex flex-col">
-      {/* MOBILE-OPTIMIZED HEADER - Compact and clean */}
-      <div className="flex-shrink-0 bg-white bg-opacity-90 shadow-sm p-3">
-        <div className="flex justify-between items-center">
-          {/* Left: Game Title - Smaller for mobile */}
-          <h1 className="text-lg font-bold text-green-800 flex items-center gap-1">
-            🇮🇪 Ireland Recycles
-          </h1>
-          
-          {/* Right: Score and Speed - Stacked vertically for mobile */}
-          <div className="flex flex-col items-end gap-1">
-            <ScoreDisplay score={gameState.score} conveyorSpeed={gameState.conveyorSpeed} />
-            
-            {/* Speed Progress - Compact mobile version */}
-            <div className="bg-blue-50 border border-blue-300 rounded-md px-2 py-1 flex items-center gap-1">
-              <div className="text-blue-600 text-sm">🏃‍♂️</div>
-              <div className="text-xs text-blue-700">
-                <span className="font-semibold">Next: €{nextSpeedAt}</span>
-              </div>
+    <div
+      className="w-full h-screen bg-gradient-to-b from-sky-200 to-green-100 overflow-hidden relative flex flex-col"
+      ref={mainContainerRef}
+    >
+      {/* COMPACT HEADER - Toolbar style */}
+      <div className="flex-shrink-0 bg-white bg-opacity-95 shadow-sm px-2 py-1 flex items-center justify-between">
+        {/* Left: Game Title */}
+        <h1 className="text-base font-bold text-green-800 flex items-center gap-1 m-0 p-0">
+          🇮🇪 Ireland Recycles
+        </h1>
+        {/* Center: Score, Speed, Progress */}
+        <div className="flex items-center gap-3">
+          <ScoreDisplay score={gameState.score} conveyorSpeed={gameState.conveyorSpeed} />
+          <div className="bg-blue-50 border border-blue-300 rounded-md px-2 py-1 flex items-center gap-1">
+            <div className="text-blue-600 text-sm">🏃‍♂️</div>
+            <div className="text-xs text-blue-700">
+              <span className="font-semibold">Next: €{nextSpeedAt}</span>
             </div>
           </div>
         </div>
-        
-        {/* Warning indicators - Full width on mobile */}
-        {backlogBottles > 5 && (
-          <div className="mt-2 bg-orange-100 border border-orange-400 rounded-lg px-3 py-2 flex items-center justify-center gap-2">
-            <div className="text-orange-600 font-bold">⚠️</div>
-            <div className="text-sm text-orange-700 font-semibold">
-              Pile Up: {backlogBottles} bottles
-            </div>
-            {backlogBottles > 8 && (
-              <div className="text-red-600 font-bold animate-pulse">🚨 CRITICAL!</div>
+        {/* Right: Controls */}
+        <div className="flex gap-2">
+          <button
+            onClick={handleTogglePlay}
+            className="p-2 rounded-full bg-green-200 hover:bg-green-300 shadow transition"
+            title={isPaused ? "Resume" : "Pause"}
+          >
+            {isPaused ? (
+              // Play icon
+              <span role="img" aria-label="Play">▶️</span>
+            ) : (
+              // Pause icon
+              <span role="img" aria-label="Pause">⏸️</span>
             )}
-          </div>
-        )}
-      </div>
-
-      {/* MAIN GAME AREA - Flexible height */}
-      <div className="flex-1 relative">
-        {/* Recycling Bins - Positioned in upper portion for easy reach */}
-        <div className="absolute top-4 left-0 right-0 h-64">
-          <RecyclingBins 
-            onBottleDrop={handleBottleDrop}
-            draggedBottle={draggedBottle}
-          />
+          </button>
+          <button
+            onClick={handleToggleFullscreen}
+            className="p-2 rounded-full bg-blue-200 hover:bg-blue-300 shadow transition"
+            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+          >
+            {isFullscreen ? (
+              // Exit Fullscreen SVG icon
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-label="Exit Fullscreen">
+                <rect x="3" y="7" width="2" height="6" fill="#2563eb"/>
+                <rect x="15" y="7" width="2" height="6" fill="#2563eb"/>
+                <rect x="7" y="3" width="6" height="2" fill="#2563eb"/>
+                <rect x="7" y="15" width="6" height="2" fill="#2563eb"/>
+              </svg>
+            ) : (
+              // Fullscreen SVG icon
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-label="Fullscreen">
+                <rect x="2" y="2" width="6" height="2" fill="#2563eb"/>
+                <rect x="2" y="2" width="2" height="6" fill="#2563eb"/>
+                <rect x="12" y="2" width="6" height="2" fill="#2563eb"/>
+                <rect x="16" y="2" width="2" height="6" fill="#2563eb"/>
+                <rect x="2" y="16" width="6" height="2" fill="#2563eb"/>
+                <rect x="2" y="12" width="2" height="6" fill="#2563eb"/>
+                <rect x="12" y="16" width="6" height="2" fill="#2563eb"/>
+                <rect x="16" y="12" width="2" height="6" fill="#2563eb"/>
+              </svg>
+            )}
+          </button>
         </div>
       </div>
-
-      {/* CONVEYOR BELT - Fixed at bottom with proper height */}
+      {/* Warning indicators - Full width, but less vertical space */}
+      {backlogBottles > 5 && (
+        <div className="bg-orange-100 border border-orange-400 rounded-lg px-3 py-1 flex items-center justify-center gap-2 text-xs">
+          <div className="text-orange-600 font-bold">⚠️</div>
+          <div className="text-orange-700 font-semibold">
+            Pile Up: {backlogBottles} bottles
+          </div>
+          {backlogBottles > 8 && (
+            <div className="text-red-600 font-bold animate-pulse">🚨 CRITICAL!</div>
+          )}
+        </div>
+      )}
+      
+      {/* MAIN GAME AREA - Flexible height */}
+      {/* Bins at the top, not absolutely positioned */}
+      <div className="flex-shrink-0 h-64 mt-4 mb-4">
+        <RecyclingBins
+          onBottleDrop={handleBottleDrop}
+          draggedBottle={draggedBottle}
+        />
+      </div>
+      
+      {/* Spacer to position conveyor belt between bins and bottom */}
+      <div className="h-40" />
+      
+      {/* Conveyor belt */}
       <div className="flex-shrink-0 h-32">
-        <ConveyorBelt 
+        <ConveyorBelt
           bottles={gameState.bottles}
           conveyorSpeed={gameState.conveyorSpeed}
           onDragStart={handleDragStart}
@@ -478,7 +654,50 @@ const GameEngine: React.FC = () => {
           isPlaying={gameState.isPlaying}
         />
       </div>
-
+      
+      {/* WIN CELEBRATION */}
+      {winCelebration && (
+        <div className="fixed inset-0 z-50 pointer-events-none">
+          {/* Background Flash */}
+          <div className="absolute inset-0 bg-gradient-to-r from-green-400 via-yellow-300 to-blue-400 opacity-40 animate-pulse" />
+          {/* Fireworks/Particles */}
+          <div className="absolute inset-0">
+            {[...Array(16)].map((_, i) => (
+              <div
+                key={i}
+                className="absolute w-4 h-4 rounded-full animate-ping"
+                style={{
+                  left: `${Math.random() * 100}%`,
+                  top: `${Math.random() * 100}%`,
+                  backgroundColor: ['#FFD700', '#00FFB2', '#FF69B4', '#7DF9FF', '#FFB347'][Math.floor(Math.random() * 5)],
+                  animationDelay: `${Math.random() * 2}s`,
+                  animationDuration: `${1 + Math.random() * 2}s`
+                }}
+              />
+            ))}
+          </div>
+          {/* Central Win Message */}
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="bg-white bg-opacity-95 rounded-2xl p-8 shadow-2xl border-4 border-green-400 text-center animate-bounce max-w-sm w-full">
+              <div className="text-5xl mb-3 animate-spin">🏆</div>
+              <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-green-600 via-yellow-600 to-blue-600 mb-2">
+                YOU WIN!
+              </div>
+              <div className="text-lg font-bold text-green-800 mb-2">
+                €100 Reached!
+              </div>
+              <div className="text-base text-gray-700">
+                Congratulations! The game will restart...
+              </div>
+            </div>
+          </div>
+          {/* Corner Celebrations */}
+          <div className="absolute top-4 left-4 text-4xl animate-bounce" style={{ animationDelay: '0.2s' }}>🎊</div>
+          <div className="absolute top-4 right-4 text-4xl animate-bounce" style={{ animationDelay: '0.4s' }}>🎉</div>
+          <div className="absolute bottom-20 left-4 text-4xl animate-bounce" style={{ animationDelay: '0.6s' }}>✨</div>
+          <div className="absolute bottom-20 right-4 text-4xl animate-bounce" style={{ animationDelay: '0.8s' }}>🌟</div>
+        </div>
+      )}
       {/* SPEED UP CELEBRATION - Mobile optimized */}
       {speedUpCelebration && (
         <div className="fixed inset-0 z-50 pointer-events-none">
@@ -518,7 +737,7 @@ const GameEngine: React.FC = () => {
               
               {/* Progress Bar Animation - Mobile sized */}
               <div className="mt-3 w-full h-3 bg-gray-200 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-gradient-to-r from-green-400 to-blue-500 rounded-full animate-pulse"
                   style={{ width: `${Math.min((speedUpCelebration.newSpeed - 1) / 2 * 100, 100)}%` }}
                 />
@@ -533,7 +752,7 @@ const GameEngine: React.FC = () => {
           <div className="absolute bottom-20 right-4 text-3xl animate-bounce" style={{ animationDelay: '0.8s' }}>🌟</div>
         </div>
       )}
-
+      
       {/* Crushing Effects - Mobile positioned */}
       {Array.from(crushingBottles).map(bottleId => (
         <div
@@ -563,7 +782,7 @@ const GameEngine: React.FC = () => {
           </div>
         </div>
       ))}
-
+      
       {/* Error Effects - Mobile positioned */}
       {errorEffects.map(effect => (
         <div
@@ -592,14 +811,30 @@ const GameEngine: React.FC = () => {
           </div>
         </div>
       ))}
-
+      
       {/* Game Over Screen */}
-      {!gameState.isPlaying && (
-        <GameOverScreen 
+      {!gameState.isPlaying && !isPaused && (
+        <GameOverScreen
           score={gameState.score}
           level={gameState.level}
           onRestart={restartGame}
         />
+      )}
+
+      {/* Pause Overlay */}
+      {isPaused && gameState.isPlaying && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white bg-opacity-90 rounded-2xl p-8 shadow-2xl flex flex-col items-center">
+            <div className="text-4xl mb-2">⏸️</div>
+            <div className="text-2xl font-bold text-green-800 mb-2">Paused</div>
+            <button
+              className="mt-4 px-6 py-2 bg-green-600 text-white rounded-xl text-lg font-bold shadow hover:bg-green-700 transition"
+              onClick={handleTogglePlay}
+            >
+              Resume
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

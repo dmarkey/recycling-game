@@ -7,6 +7,14 @@
     <title>Ireland Recycles - Autism-Friendly Recycling Game</title>
   </head>
   <body>
+    <script>
+      // Fix 100vh issue on mobile browsers
+      function setVh() {
+        document.documentElement.style.setProperty('--vh', window.innerHeight * 0.01 + 'px');
+      }
+      setVh();
+      window.addEventListener('resize', setVh);
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

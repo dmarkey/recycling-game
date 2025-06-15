@@ -2,9 +2,37 @@
 class SoundEffects {
   private audioContext: AudioContext | null = null;
 
+  // Caches for preloaded sounds
+  private glassBuffer: AudioBuffer | null = null;
+  private canBuffer: AudioBuffer | null = null;
+  private preloadPromise: Promise<void> | null = null;
+
+  /**
+   * Preload all sound assets and cache their AudioBuffers.
+   * Returns a promise that resolves when all are loaded.
+   */
+  public async preloadAll(): Promise<void> {
+    if (this.preloadPromise) return this.preloadPromise; // Prevent duplicate preloads
+    this.preloadPromise = (async () => {
+      await this.ensureAudioContext();
+      // Preload glass
+      this.glassBuffer = await this.loadSound('/public/sounds/glass-bottle-smash-3-229205.mp3');
+      // Preload can (used for both can and plastic)
+      this.canBuffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
+    })();
+    return this.preloadPromise;
+  }
+
   constructor() {
-    // Initialize audio context on first user interaction
+    // Do not initialize audio context here; must be done on user gesture for browser compatibility
+  }
+
+  /**
+   * Initialize AudioContext and preload all sounds in response to a user gesture.
+   */
+  public async initOnUserGesture(): Promise<void> {
     this.initAudioContext();
+    await this.preloadAll();
   }
 
   private initAudioContext() {
@@ -50,50 +78,59 @@ class SoundEffects {
 
   // Glass breaking sound effect
   async playGlassBreak() {
-    console.log('Attempting to play glass break sound.');
-    const glassSoundBuffer = await this.loadSound('/public/sounds/glass-bottle-smash-3-229205.mp3');
-    if (!glassSoundBuffer || !this.audioContext) {
+    await this.ensureAudioContext();
+    let buffer = this.glassBuffer;
+    if (!buffer) {
+      buffer = await this.loadSound('/public/sounds/glass-bottle-smash-3-229205.mp3');
+      this.glassBuffer = buffer;
+    }
+    if (!buffer || !this.audioContext) {
       console.warn('Glass sound buffer not available or AudioContext missing.');
       return;
     }
-
     const source = this.audioContext.createBufferSource();
-    source.buffer = glassSoundBuffer;
+    source.buffer = buffer;
     source.connect(this.audioContext.destination);
     source.start(0);
-    console.log('Glass break sound started.');
+    //console.log('Glass break sound started.');
   }
 
   // Can crushing sound effect
   async playCanCrush() {
-    console.log('Attempting to play can crush sound.');
-    const canSoundBuffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
-    if (!canSoundBuffer || !this.audioContext) {
+    await this.ensureAudioContext();
+    let buffer = this.canBuffer;
+    if (!buffer) {
+      buffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
+      this.canBuffer = buffer;
+    }
+    if (!buffer || !this.audioContext) {
       console.warn('Can sound buffer not available or AudioContext missing.');
       return;
     }
-
     const source = this.audioContext.createBufferSource();
-    source.buffer = canSoundBuffer;
+    source.buffer = buffer;
     source.connect(this.audioContext.destination);
     source.start(0);
-    console.log('Can crush sound started.');
+    //console.log('Can crush sound started.');
   }
 
   // Plastic bottle crushing sound (using can crush sound for DRS bottles)
   async playPlasticCrush() {
-    console.log('Attempting to play plastic bottle crush sound (using can crush).');
-    const canSoundBuffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
-    if (!canSoundBuffer || !this.audioContext) {
+    await this.ensureAudioContext();
+    let buffer = this.canBuffer;
+    if (!buffer) {
+      buffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
+      this.canBuffer = buffer;
+    }
+    if (!buffer || !this.audioContext) {
       console.warn('Can sound buffer not available or AudioContext missing for plastic crush.');
       return;
     }
-
     const source = this.audioContext.createBufferSource();
-    source.buffer = canSoundBuffer;
+    source.buffer = buffer;
     source.connect(this.audioContext.destination);
     source.start(0);
-    console.log('Plastic bottle crush sound (can crush) started.');
+    //console.log('Plastic bottle crush sound (can crush) started.');
   }
 
   // Success sound for correct sorting
