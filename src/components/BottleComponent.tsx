@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Bottle } from '../types/game';
 
 interface BottleComponentProps {
@@ -7,6 +7,28 @@ interface BottleComponentProps {
   onDragEnd: () => void;
 }
 
+// Performance monitoring utilities
+const performanceLogger = {
+  renderStart: 0,
+  renderCount: 0,
+  totalRenderTime: 0,
+  
+  startRender() {
+    this.renderStart = performance.now();
+  },
+  
+  endRender() {
+    const renderTime = performance.now() - this.renderStart;
+    this.renderCount++;
+    this.totalRenderTime += renderTime;
+    
+    // Log every 100 renders to avoid spam
+    if (this.renderCount % 100 === 0) {
+      console.log(`[RENDER PERFORMANCE] Avg render time: ${(this.totalRenderTime / this.renderCount).toFixed(2)}ms over ${this.renderCount} renders`);
+    }
+  }
+};
+
 const BottleComponent: React.FC<BottleComponentProps> = ({
   bottle,
   onDragStart,
@@ -14,7 +36,54 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 });
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
 
+  // Start performance monitoring
+  useEffect(() => {
+    performanceLogger.startRender();
+    return () => {
+      performanceLogger.endRender();
+    };
+  });
+
+  // Get the appropriate image path based on bottle properties
+  const getImagePath = (): string => {
+    console.log(`[IMAGE MAPPING] Bottle type: ${bottle.type}, subType: ${bottle.subType}, color: ${bottle.color}, depositValue: ${bottle.depositValue}`);
+    
+    if (bottle.type === 'aluminum' && bottle.subType === 'can') {
+      return '/images/beer-can-15c.png';
+    }
+    
+    if (bottle.type === 'plastic' && bottle.subType === 'bottle') {
+      if (bottle.depositValue === 15) {
+        return '/images/plastic-bottle-15c.png';
+      } else if (bottle.depositValue === 25) {
+        return '/images/plastic-bottle-25c.png';
+      }
+      // Fallback to 15c for any other plastic bottle
+      return '/images/plastic-bottle-15c.png';
+    }
+    
+    if (bottle.type === 'glass' && bottle.subType === 'bottle') {
+      switch (bottle.color) {
+        case 'green':
+          return '/images/glass-bottle-green.png';
+        case 'brown':
+          return '/images/glass-bottle-brown.png';
+        case 'clear':
+        default:
+          return '/images/glass-bottle-white.png';
+      }
+    }
+    
+    // Fallback - should never happen
+    console.warn(`[IMAGE MAPPING] No image found for bottle: ${bottle.type}/${bottle.subType}/${bottle.color}/${bottle.depositValue}`);
+    return '/images/plastic-bottle-15c.png';
+  };
+
+  // Get responsive sizing based on bottle type
   const getItemSize = () => {
     if (bottle.type === 'aluminum') {
       return 'w-10 h-16'; // Standard can size
@@ -28,146 +97,88 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
     return 'w-12 h-24'; // Glass bottles
   };
 
-  const renderAluminumCan = () => (
-    <div className="relative w-full h-full">
-      {/* Can Top */}
-      <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-8 h-2 bg-gradient-to-b from-gray-300 to-gray-500 rounded-t-sm border border-gray-600">
-        <div className="absolute top-0.5 left-1/2 transform -translate-x-1/2 w-3 h-0.5 bg-gray-200 rounded-full" />
-      </div>
-      
-      {/* Can Body */}
-      <div className="absolute top-2 left-0 right-0 bottom-0 bg-gradient-to-br from-blue-400 via-blue-500 to-blue-700 rounded-lg border-2 border-blue-800 shadow-lg overflow-hidden">
-        {/* Can ridges */}
-        <div className="absolute inset-0">
-          <div className="absolute top-2 left-0 right-0 h-px bg-blue-300 opacity-50" />
-          <div className="absolute top-4 left-0 right-0 h-px bg-blue-300 opacity-50" />
-          <div className="absolute bottom-4 left-0 right-0 h-px bg-blue-300 opacity-50" />
-          <div className="absolute bottom-2 left-0 right-0 h-px bg-blue-300 opacity-50" />
-        </div>
-        
-        {/* DRS Label */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="bg-white bg-opacity-95 rounded-lg p-1.5 border-2 border-green-600 shadow-md">
-            <div className="text-center">
-              <div className="text-xs font-bold text-green-800 leading-tight">DRS</div>
-              <div className="text-sm font-black text-green-800">{bottle.depositValue}¢</div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Metallic shine */}
-        <div className="absolute top-1 left-1 w-2 h-8 bg-white opacity-60 rounded-full blur-sm" />
-        <div className="absolute top-4 right-1 w-1 h-6 bg-white opacity-30 rounded-full" />
-      </div>
-    </div>
-  );
+  // Handle image loading events
+  const handleImageLoad = () => {
+    setImageLoaded(true);
+    setImageError(false);
+    console.log(`[IMAGE LOAD] Successfully loaded: ${getImagePath()}`);
+  };
 
-  const renderPlasticBottle = () => (
-    <div className="relative w-full h-full">
-      {/* Bottle Cap */}
-      <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-8 h-4 bg-gradient-to-b from-red-500 to-red-700 rounded-t-lg border border-red-800 shadow-sm">
-        <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-red-300 rounded-full opacity-60" />
-      </div>
-      
-      {/* Bottle Neck */}
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-6 h-6 bg-gradient-to-b from-blue-100 to-blue-200 border-l border-r border-blue-300">
-        <div className="absolute top-0 left-0 w-1 h-full bg-white opacity-40" />
-      </div>
-      
-      {/* Bottle Body */}
-      <div className="absolute top-10 left-0 right-0 bottom-0 bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200 rounded-b-2xl border-2 border-blue-300 shadow-lg overflow-hidden">
-        {/* Plastic texture lines */}
-        <div className="absolute inset-0">
-          <div className="absolute top-2 left-0 right-0 h-px bg-blue-300 opacity-30" />
-          <div className="absolute top-4 left-0 right-0 h-px bg-blue-300 opacity-30" />
-          <div className="absolute bottom-4 left-0 right-0 h-px bg-blue-300 opacity-30" />
-          <div className="absolute bottom-2 left-0 right-0 h-px bg-blue-300 opacity-30" />
-        </div>
-        
-        {/* DRS Label */}
-        <div className="absolute inset-0 flex items-center justify-center">
-          <div className="bg-white bg-opacity-95 rounded-lg p-2 border-2 border-green-600 shadow-md">
-            <div className="text-center">
-              <div className="text-xs font-bold text-green-800 leading-tight">DRS</div>
-              <div className="text-lg font-black text-green-800">{bottle.depositValue}¢</div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Highlight reflection */}
-        <div className="absolute top-2 left-2 w-3 h-8 bg-white opacity-50 rounded-full blur-sm" />
-        
-        {/* Bottom curve highlight */}
-        <div className="absolute bottom-1 left-1 right-1 h-2 bg-gradient-to-t from-white to-transparent opacity-30 rounded-b-xl" />
-      </div>
-    </div>
-  );
+  const handleImageError = () => {
+    setImageError(true);
+    setImageLoaded(false);
+    console.error(`[IMAGE ERROR] Failed to load: ${getImagePath()}`);
+  };
 
-  const renderGlassBottle = () => {
-    const getGlassColors = () => {
-      switch (bottle.color) {
-        case 'green':
-          return {
-            main: 'from-green-400 via-green-500 to-green-700',
-            border: 'border-green-800',
-            highlight: 'bg-green-200',
-            shadow: 'shadow-green-900/30'
-          };
-        case 'brown':
-          return {
-            main: 'from-amber-600 via-amber-700 to-amber-900',
-            border: 'border-amber-900',
-            highlight: 'bg-amber-300',
-            shadow: 'shadow-amber-900/40'
-          };
-        case 'clear':
-        default:
-          return {
-            main: 'from-gray-100 via-gray-200 to-gray-400',
-            border: 'border-gray-500',
-            highlight: 'bg-white',
-            shadow: 'shadow-gray-600/30'
-          };
+  // Optimized image rendering with hardware acceleration
+  const renderBottleImage = () => {
+    const imagePath = getImagePath();
+    
+    return (
+      <img
+        ref={imageRef}
+        src={imagePath}
+        alt={`${bottle.type} ${bottle.subType}`}
+        className="w-full h-full object-contain select-none pointer-events-none"
+        style={{
+          // Enable hardware acceleration
+          transform: 'translateZ(0)',
+          backfaceVisibility: 'hidden',
+          perspective: '1000px',
+          // Optimize image rendering
+          imageRendering: 'auto' as const,
+          // Prevent image dragging
+          userSelect: 'none',
+          WebkitUserSelect: 'none',
+          MozUserSelect: 'none',
+          msUserSelect: 'none'
+        }}
+        onLoad={handleImageLoad}
+        onError={handleImageError}
+        draggable={false}
+      />
+    );
+  };
+
+  // Fallback CSS rendering for when images fail to load
+  const renderFallbackBottle = () => {
+    console.log(`[FALLBACK RENDER] Using CSS fallback for ${bottle.type}`);
+    
+    // Simplified fallback - much lighter than original CSS
+    const getSimpleStyle = () => {
+      if (bottle.type === 'aluminum') {
+        return 'bg-blue-500 border-2 border-blue-700 rounded-lg';
+      } else if (bottle.type === 'plastic') {
+        return 'bg-blue-200 border-2 border-blue-400 rounded-2xl';
+      } else {
+        // Glass
+        const colorMap = {
+          green: 'bg-green-500 border-green-700',
+          brown: 'bg-amber-600 border-amber-800',
+          clear: 'bg-gray-300 border-gray-500'
+        };
+        const colors = colorMap[bottle.color as keyof typeof colorMap] || colorMap.clear;
+        return `${colors} border-2 rounded-2xl`;
       }
     };
 
-    const colors = getGlassColors();
-
     return (
-      <div className="relative w-full h-full">
-        {/* Cork/Cap */}
-        <div className="absolute top-0 left-1/2 transform -translate-x-1/2 w-7 h-3 bg-gradient-to-b from-yellow-800 to-yellow-900 rounded-t-sm border border-yellow-900">
-          <div className="absolute top-0.5 left-1 right-1 h-px bg-yellow-600 opacity-60" />
-        </div>
-        
-        {/* Bottle Neck */}
-        <div className={`absolute top-3 left-1/2 transform -translate-x-1/2 w-5 h-4 bg-gradient-to-b ${colors.main} ${colors.border} border-l border-r`}>
-          <div className={`absolute top-0 left-0 w-px h-full ${colors.highlight} opacity-60`} />
-        </div>
-        
-        {/* Bottle Body */}
-        <div className={`absolute top-7 left-0 right-0 bottom-0 bg-gradient-to-br ${colors.main} rounded-b-2xl border-2 ${colors.border} ${colors.shadow} shadow-lg overflow-hidden`}>
-          {/* Glass reflection - main highlight */}
-          <div className={`absolute top-2 left-1 w-2 h-12 ${colors.highlight} opacity-40 rounded-full blur-sm`} />
-          
-          {/* Secondary reflection */}
-          <div className={`absolute top-6 right-1 w-1 h-8 ${colors.highlight} opacity-25 rounded-full`} />
-          
-          {/* Glass thickness effect at bottom */}
-          <div className={`absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-t ${colors.main.replace('from-', 'from-').replace('via-', 'via-').replace('to-', 'to-')} opacity-60 rounded-b-2xl`} />
-          
-          {/* Bottle bottom indentation */}
-          <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-6 h-2 bg-black bg-opacity-20 rounded-full" />
+      <div className={`w-full h-full ${getSimpleStyle()} flex items-center justify-center`}>
+        <div className="text-xs font-bold text-white bg-black bg-opacity-50 px-1 rounded">
+          {bottle.type.charAt(0).toUpperCase()}
+          {bottle.depositValue && <div>{bottle.depositValue}¢</div>}
         </div>
       </div>
     );
   };
 
+  // Event handlers for drag and drop
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
     setDragPosition({ x: e.clientX, y: e.clientY });
     onDragStart(bottle);
+    console.log(`[DRAG START] Bottle ${bottle.id} (${bottle.type}) drag started`);
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -180,6 +191,7 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
     if (isDragging) {
       setIsDragging(false);
       onDragEnd();
+      console.log(`[DRAG END] Bottle ${bottle.id} (${bottle.type}) drag ended`);
     }
   };
 
@@ -189,6 +201,7 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
     setIsDragging(true);
     setDragPosition({ x: touch.clientX, y: touch.clientY });
     onDragStart(bottle);
+    console.log(`[TOUCH START] Bottle ${bottle.id} (${bottle.type}) touch started`);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
@@ -204,33 +217,35 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
     if (isDragging) {
       setIsDragging(false);
       onDragEnd();
+      console.log(`[TOUCH END] Bottle ${bottle.id} (${bottle.type}) touch ended`);
     }
   };
 
+  // Optimized styling with hardware acceleration
   const itemStyle = isDragging ? {
     position: 'fixed' as const,
     left: dragPosition.x - 32,
     top: dragPosition.y - 40,
     zIndex: 1000,
-    transform: 'scale(1.1)',
-    pointerEvents: 'none' as const
+    transform: 'scale(1.1) translateZ(0)', // Hardware acceleration
+    pointerEvents: 'none' as const,
+    willChange: 'transform' // Optimize for animations
   } : {
     position: 'absolute' as const,
     left: `${bottle.x}px`,
     bottom: `${8 + (bottle.y || 0)}px`,
-    transform: `translateX(-50%) rotate(${bottle.rotation || 0}deg)`,
-    transition: bottle.x > 80 ? 'left 0.1s ease-out' : 'all 0.05s ease-out' // Smooth movement on belt, physics in pile
+    transform: `translateX(-50%) rotate(${bottle.rotation || 0}deg) translateZ(0)`, // Hardware acceleration
+    transition: bottle.x > 80 ? 'left 0.1s ease-out' : 'all 0.05s ease-out',
+    willChange: bottle.x <= 80 ? 'transform' : 'auto' // Optimize physics bottles
   };
 
+  // Main render function - chooses between image and fallback
   const renderItem = () => {
-    switch (bottle.type) {
-      case 'aluminum':
-        return renderAluminumCan();
-      case 'plastic':
-        return renderPlasticBottle();
-      case 'glass':
-      default:
-        return renderGlassBottle();
+    // Always try to render the image first, fallback only if there's an error
+    if (imageError) {
+      return renderFallbackBottle();
+    } else {
+      return renderBottleImage();
     }
   };
 
@@ -247,6 +262,20 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
         onTouchEnd={handleTouchEnd}
       >
         {renderItem()}
+        
+        {/* Loading indicator for images */}
+        {!imageLoaded && !imageError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          </div>
+        )}
+        
+        {/* Error indicator */}
+        {imageError && (
+          <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+            !
+          </div>
+        )}
       </div>
       
       {/* Drag Layer for Mobile */}
