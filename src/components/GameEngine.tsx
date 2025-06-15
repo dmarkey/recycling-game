@@ -3,6 +3,7 @@ import ConveyorBelt from './ConveyorBelt';
 import RecyclingBins from './RecyclingBins';
 import ScoreDisplay from './ScoreDisplay';
 import GameOverScreen from './GameOverScreen';
+import ImageDebugPanel from './ImageDebugPanel';
 import { Bottle, GameState } from '../types/game';
 import { generateBottle } from '../utils/bottleGenerator';
 import { soundEffects } from '../utils/soundEffects';
@@ -29,6 +30,9 @@ const GameEngine: React.FC = () => {
   });
   // Separate pause state
   const [isPaused, setIsPaused] = useState(false);
+  
+  // Debug panel state (only show in development)
+  const [showImageDebug, setShowImageDebug] = useState(false);
 
   const [draggedBottle, setDraggedBottle] = useState<Bottle | null>(null);
   const [crushingBottles, setCrushingBottles] = useState<Set<number>>(new Set());
@@ -835,6 +839,14 @@ const GameEngine: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Image Debug Panel (Development only) */}
+      {import.meta.env.DEV && (
+        <ImageDebugPanel
+          isVisible={showImageDebug}
+          onToggle={() => setShowImageDebug(!showImageDebug)}
+        />
       )}
     </div>
   );

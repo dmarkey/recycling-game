@@ -16,9 +16,9 @@ class SoundEffects {
     this.preloadPromise = (async () => {
       await this.ensureAudioContext();
       // Preload glass
-      this.glassBuffer = await this.loadSound('/public/sounds/glass-bottle-smash-3-229205.mp3');
+      this.glassBuffer = await this.loadSound('/sounds/glass-bottle-smash-3-229205.mp3');
       // Preload can (used for both can and plastic)
-      this.canBuffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
+      this.canBuffer = await this.loadSound('/sounds/crushed-can-139334.mp3');
     })();
     return this.preloadPromise;
   }
@@ -81,7 +81,7 @@ class SoundEffects {
     await this.ensureAudioContext();
     let buffer = this.glassBuffer;
     if (!buffer) {
-      buffer = await this.loadSound('/public/sounds/glass-bottle-smash-3-229205.mp3');
+      buffer = await this.loadSound('/sounds/glass-bottle-smash-3-229205.mp3');
       this.glassBuffer = buffer;
     }
     if (!buffer || !this.audioContext) {
@@ -100,7 +100,7 @@ class SoundEffects {
     await this.ensureAudioContext();
     let buffer = this.canBuffer;
     if (!buffer) {
-      buffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
+      buffer = await this.loadSound('/sounds/crushed-can-139334.mp3');
       this.canBuffer = buffer;
     }
     if (!buffer || !this.audioContext) {
@@ -119,7 +119,7 @@ class SoundEffects {
     await this.ensureAudioContext();
     let buffer = this.canBuffer;
     if (!buffer) {
-      buffer = await this.loadSound('/public/sounds/crushed-can-139334.mp3');
+      buffer = await this.loadSound('/sounds/crushed-can-139334.mp3');
       this.canBuffer = buffer;
     }
     if (!buffer || !this.audioContext) {

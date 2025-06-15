@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Bottle } from '../types/game';
+import { ImageManager } from '../utils/imageManager';
 
 interface BottleComponentProps {
   bottle: Bottle;
@@ -7,35 +8,12 @@ interface BottleComponentProps {
   onDragEnd: () => void;
 }
 
-// Performance monitoring utilities
-const performanceLogger = {
-  renderStart: 0,
-  renderCount: 0,
-  totalRenderTime: 0,
-  
-  startRender() {
-    this.renderStart = performance.now();
-  },
-  
-  endRender() {
-    const renderTime = performance.now() - this.renderStart;
-    this.renderCount++;
-    this.totalRenderTime += renderTime;
-    
-    // Log every 100 renders to avoid spam
-    if (this.renderCount % 100 === 0) {
-      console.log(`[RENDER PERFORMANCE] Avg render time: ${(this.totalRenderTime / this.renderCount).toFixed(2)}ms over ${this.renderCount} renders`);
-    }
-  }
-};
-
 const BottleComponent: React.FC<BottleComponentProps> = ({
   bottle,
   onDragStart,
   onDragEnd
 }) => {
   const [isDragging, setIsDragging] = useState(false);
-  // Remove dragPosition from state for performance
   const dragPositionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
@@ -43,47 +21,21 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
   const bottleRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
 
-  // Start performance monitoring
-  useEffect(() => {
-    performanceLogger.startRender();
-    return () => {
-      performanceLogger.endRender();
-    };
-  });
+  // Get ImageManager instance
+  const imageManager = useMemo(() => ImageManager.getInstance(), []);
 
-  // Get the appropriate image path based on bottle properties
+  // Memoize the selected image path for this bottle instance
+  const selectedImagePath = useMemo(() => {
+    return imageManager.getImageForBottle(
+      bottle.type,
+      bottle.subType,
+      bottle.depositValue,
+      bottle.color
+    );
+  }, [bottle.id, bottle.type, bottle.subType, bottle.color, bottle.depositValue, imageManager]);
+
   const getImagePath = (): string => {
-    console.log(`[IMAGE MAPPING] Bottle type: ${bottle.type}, subType: ${bottle.subType}, color: ${bottle.color}, depositValue: ${bottle.depositValue}`);
-    
-    if (bottle.type === 'aluminum' && bottle.subType === 'can') {
-      return '/images/beer-can-15c.png';
-    }
-    
-    if (bottle.type === 'plastic' && bottle.subType === 'bottle') {
-      if (bottle.depositValue === 15) {
-        return '/images/plastic-bottle-15c.png';
-      } else if (bottle.depositValue === 25) {
-        return '/images/plastic-bottle-25c.png';
-      }
-      // Fallback to 15c for any other plastic bottle
-      return '/images/plastic-bottle-15c.png';
-    }
-    
-    if (bottle.type === 'glass' && bottle.subType === 'bottle') {
-      switch (bottle.color) {
-        case 'green':
-          return '/images/glass-bottle-green.png';
-        case 'brown':
-          return '/images/glass-bottle-brown.png';
-        case 'clear':
-        default:
-          return '/images/glass-bottle-white.png';
-      }
-    }
-    
-    // Fallback - should never happen
-    console.warn(`[IMAGE MAPPING] No image found for bottle: ${bottle.type}/${bottle.subType}/${bottle.color}/${bottle.depositValue}`);
-    return '/images/plastic-bottle-15c.png';
+    return selectedImagePath;
   };
 
   // Get responsive sizing based on bottle type
@@ -101,17 +53,15 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
   };
 
   // Handle image loading events
-  const handleImageLoad = () => {
+  const handleImageLoad = useCallback(() => {
     setImageLoaded(true);
     setImageError(false);
-    console.log(`[IMAGE LOAD] Successfully loaded: ${getImagePath()}`);
-  };
+  }, []);
 
-  const handleImageError = () => {
+  const handleImageError = useCallback(() => {
     setImageError(true);
     setImageLoaded(false);
-    console.error(`[IMAGE ERROR] Failed to load: ${getImagePath()}`);
-  };
+  }, []);
 
   // Optimized image rendering with hardware acceleration
   const renderBottleImage = () => {
@@ -124,13 +74,10 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
         alt={`${bottle.type} ${bottle.subType}`}
         className="w-full h-full object-contain select-none pointer-events-none"
         style={{
-          // Enable hardware acceleration
           transform: 'translateZ(0)',
           backfaceVisibility: 'hidden',
           perspective: '1000px',
-          // Optimize image rendering
           imageRendering: 'auto' as const,
-          // Prevent image dragging
           userSelect: 'none',
           WebkitUserSelect: 'none',
           MozUserSelect: 'none',
@@ -145,9 +92,6 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
 
   // Fallback CSS rendering for when images fail to load
   const renderFallbackBottle = () => {
-    console.log(`[FALLBACK RENDER] Using CSS fallback for ${bottle.type}`);
-    
-    // Simplified fallback - much lighter than original CSS
     const getSimpleStyle = () => {
       if (bottle.type === 'aluminum') {
         return 'bg-blue-500 border-2 border-blue-700 rounded-lg';
@@ -175,82 +119,112 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
     );
   };
 
+  // Directly update the bottle position for smooth dragging
+  const updateBottlePosition = useCallback(() => {
+    if (!bottleRef.current || !isDragging) return;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    
+    rafRef.current = requestAnimationFrame(() => {
+      if (!bottleRef.current) return;
+      const { x, y } = dragPositionRef.current;
+      
+      // Use individual style properties to avoid CSS placeholder warnings
+      const element = bottleRef.current;
+      element.style.position = 'fixed';
+      element.style.left = `${x - 32}px`;
+      element.style.top = `${y - 40}px`;
+      element.style.zIndex = '1000';
+      element.style.transform = 'scale(1.1) translateZ(0)';
+      element.style.pointerEvents = 'auto';
+      element.style.willChange = 'transform';
+      element.style.touchAction = 'none';
+      element.style.transition = 'none';
+    });
+  }, [isDragging]);
+
+  // Reset bottle style after drag ends
+  const resetBottlePosition = useCallback(() => {
+    if (!bottleRef.current) return;
+    bottleRef.current.removeAttribute('style');
+  }, []);
+
   // Event handlers for drag and drop
-  const handleMouseDown = (e: React.MouseEvent) => {
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsDragging(true);
     dragPositionRef.current = { x: e.clientX, y: e.clientY };
     updateBottlePosition();
     onDragStart(bottle);
-    console.log(`[DRAG START] Bottle ${bottle.id} (${bottle.type}) drag started`);
-  };
+  }, [bottle, onDragStart, updateBottlePosition]);
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (isDragging) {
       dragPositionRef.current = { x: e.clientX, y: e.clientY };
       updateBottlePosition();
     }
-  };
+  }, [isDragging, updateBottlePosition]);
 
-  const handleMouseUp = () => {
+  const handleMouseUp = useCallback(() => {
     if (isDragging) {
       setIsDragging(false);
       resetBottlePosition();
       onDragEnd();
-      console.log(`[DRAG END] Bottle ${bottle.id} (${bottle.type}) drag ended`);
     }
-  };
+  }, [isDragging, onDragEnd, resetBottlePosition]);
 
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
     const touch = e.touches[0];
     setIsDragging(true);
     dragPositionRef.current = { x: touch.clientX, y: touch.clientY };
     updateBottlePosition();
     onDragStart(bottle);
-    console.log(`[TOUCH START] Bottle ${bottle.id} (${bottle.type}) touch started`);
-  };
+  }, [bottle, onDragStart, updateBottlePosition]);
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (isDragging) {
       e.preventDefault();
       const touch = e.touches[0];
       dragPositionRef.current = { x: touch.clientX, y: touch.clientY };
       updateBottlePosition();
     }
-  };
+  }, [isDragging, updateBottlePosition]);
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     e.preventDefault();
     if (isDragging) {
       setIsDragging(false);
       resetBottlePosition();
       onDragEnd();
-      console.log(`[TOUCH END] Bottle ${bottle.id} (${bottle.type}) touch ended`);
     }
-  };
+  }, [isDragging, onDragEnd, resetBottlePosition]);
 
   // Optimized styling with hardware acceleration
-  // Only use itemStyle for non-dragging state; during drag, style is set directly for performance
   const itemStyle = !isDragging ? {
       position: 'absolute' as const,
       left: `${bottle.x}px`,
       bottom: `${8 + (bottle.y || 0)}px`,
-      transform: `translateX(-50%) rotate(${bottle.rotation || 0}deg) translateZ(0)`, // Hardware acceleration
+      transform: `translateX(-50%) rotate(${bottle.rotation || 0}deg) translateZ(0)`,
       transition: bottle.x > 80 ? 'left 0.1s ease-out' : 'all 0.05s ease-out',
-      willChange: bottle.x <= 80 ? 'transform' : 'auto', // Optimize physics bottles
-      touchAction: 'none' as const // Prevent scrolling on mobile even when not dragging
+      willChange: bottle.x <= 80 ? 'transform' : 'auto',
+      touchAction: 'none' as const
     } : undefined;
 
   // Main render function - chooses between image and fallback
   const renderItem = () => {
-    // Always try to render the image first, fallback only if there's an error
     if (imageError) {
       return renderFallbackBottle();
     } else {
       return renderBottleImage();
     }
   };
+
+  // Clean up RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   return (
     <>
@@ -285,7 +259,7 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
       {/* Drag Layer for Mobile */}
       {isDragging && (
         <div
-          className="fixed inset-0 z-40" // Lower z-index than dragged item
+          className="fixed inset-0 z-40"
           style={{ touchAction: 'none', pointerEvents: 'auto' }}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -295,38 +269,6 @@ const BottleComponent: React.FC<BottleComponentProps> = ({
       )}
     </>
   );
-  // Directly update the bottle position for smooth dragging
-  function updateBottlePosition() {
-    if (!bottleRef.current) return;
-    if (!isDragging) return;
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      const { x, y } = dragPositionRef.current;
-      bottleRef.current!.style.position = 'fixed';
-      bottleRef.current!.style.left = `${x - 32}px`;
-      bottleRef.current!.style.top = `${y - 40}px`;
-      bottleRef.current!.style.zIndex = '1000';
-      bottleRef.current!.style.transform = 'scale(1.1) translateZ(0)';
-      bottleRef.current!.style.pointerEvents = 'auto';
-      bottleRef.current!.style.willChange = 'transform';
-      bottleRef.current!.style.touchAction = 'none';
-      bottleRef.current!.style.transition = 'none';
-    });
-  }
-
-  // Reset bottle style after drag ends
-  function resetBottlePosition() {
-    if (!bottleRef.current) return;
-    bottleRef.current.removeAttribute('style');
-  }
-
-  // Clean up RAF on unmount
-  useEffect(() => {
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
 };
 
 export default BottleComponent;

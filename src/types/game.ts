@@ -1,6 +1,8 @@
+export type BottleType = 'plastic' | 'glass' | 'aluminum';
+
 export interface Bottle {
   id: number;
-  type: 'plastic' | 'glass' | 'aluminum';
+  type: BottleType;
   subType: 'bottle' | 'can';
   color?: 'green' | 'clear' | 'brown';
   depositValue?: number; // For DRS items: 15 or 25 cents

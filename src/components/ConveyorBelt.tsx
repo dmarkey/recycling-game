@@ -76,7 +76,7 @@ const ConveyorBelt: React.FC<ConveyorBeltProps> = ({
         ))}
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes conveyor {
           0% { background-position-x: 0px; }
           100% { background-position-x: 30px; }
